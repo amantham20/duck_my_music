@@ -1,0 +1,96 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+    
+    - name: Generate icon
+      run: python create_icon.py
+    
+    - name: Build executable
+      run: pyinstaller duck_my_music.spec --clean
+    
+    - name: Get version
+      id: version
+      shell: bash
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Create release artifact
+      run: |
+        mkdir release
+        copy dist\DuckMyMusic.exe release\
+        copy config.json release\
+        copy README.md release\
+    
+    - name: Zip release
+      run: Compress-Archive -Path release\* -DestinationPath DuckMyMusic-${{ steps.version.outputs.version }}-windows.zip
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DuckMyMusic-${{ steps.version.outputs.version }}-windows
+        path: release/
+    
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Duck My Music ${{ steps.version.outputs.version }}
+        body: |
+          ## Duck My Music ${{ steps.version.outputs.version }}
+          
+          Automatically duck your Spotify volume when other applications play audio.
+          
+          ### Installation
+          1. Download `DuckMyMusic-${{ steps.version.outputs.version }}-windows.zip`
+          2. Extract to your desired location
+          3. Run `DuckMyMusic.exe`
+          
+          ### Features
+          - Automatic audio detection from Chrome, Discord, Zoom, and more
+          - Smooth volume fading
+          - System tray integration
+          - Configurable via `config.json`
+          
+          ### Requirements
+          - Windows 10 or later
+          - Spotify desktop app
+        files: |
+          DuckMyMusic-${{ steps.version.outputs.version }}-windows.zip
+          dist/DuckMyMusic.exe
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -168,3 +168,37 @@ Contributions are welcome! Feel free to:
 - Report bugs
 - Suggest features
 - Submit pull requests
+
+## Building from Source
+
+### Building the Windows Executable
+
+1. Install PyInstaller:
+   ```bash
+   pip install pyinstaller
+   ```
+
+2. Generate the icon:
+   ```bash
+   python create_icon.py
+   ```
+
+3. Build the executable:
+   ```bash
+   pyinstaller duck_my_music.spec --clean
+   ```
+
+4. The executable will be in the `dist/` folder as `DuckMyMusic.exe`
+
+### Automated Releases
+
+This project uses GitHub Actions for automated releases. When you push a tag starting with `v` (e.g., `v1.0.0`), it will automatically:
+- Build the Windows executable
+- Create a GitHub release
+- Upload the executable and a zip file
+
+To create a release:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
