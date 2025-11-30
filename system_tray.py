@@ -68,11 +68,11 @@ class SystemTray:
         self,
         on_toggle: Optional[Callable] = None,
         on_quit: Optional[Callable] = None,
-        on_settings: Optional[Callable] = None
+        on_show: Optional[Callable] = None
     ):
         self.on_toggle = on_toggle
         self.on_quit = on_quit
-        self.on_settings = on_settings
+        self.on_show = on_show
         
         self._icon = None
         self._thread: Optional[threading.Thread] = None
@@ -98,6 +98,10 @@ class SystemTray:
         """Create the system tray menu."""
         import pystray
         
+        def show_window(icon, item):
+            if self.on_show:
+                self.on_show()
+        
         def toggle_enabled(icon, item):
             self._enabled = not self._enabled
             self._update_icon()
@@ -111,6 +115,7 @@ class SystemTray:
             self.stop()
         
         return pystray.Menu(
+            pystray.MenuItem("Show Window", show_window, default=True),
             pystray.MenuItem(
                 lambda text: "✓ Enabled" if self._enabled else "○ Disabled",
                 toggle_enabled
