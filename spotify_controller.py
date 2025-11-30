@@ -56,6 +56,27 @@ async def get_spotify_session():
         return None
 
 
+async def is_spotify_playing_async() -> bool:
+    """Check if Spotify is currently playing."""
+    try:
+        from winsdk.windows.media.control import (
+            GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus
+        )
+        
+        session = await get_spotify_session()
+        if session:
+            playback_info = session.get_playback_info()
+            if playback_info:
+                status = playback_info.playback_status
+                is_playing = status == PlaybackStatus.PLAYING
+                logger.debug(f"Spotify playback status: {status}, is_playing: {is_playing}")
+                return is_playing
+        return False
+    except Exception as e:
+        logger.error(f"Error checking Spotify playback status: {e}")
+        return False
+
+
 async def pause_spotify_async() -> bool:
     """Pause Spotify using Windows Media Transport Controls."""
     try:
@@ -104,6 +125,7 @@ class SpotifyController:
     
     def __init__(self):
         self._is_paused_by_us = False
+        self._was_playing_before = False  # Track if Spotify was playing before we paused
         self._available = False
         
         # Test if winsdk is available
@@ -121,28 +143,46 @@ class SpotifyController:
         """Returns True if we paused Spotify (so we know to resume it)."""
         return self._is_paused_by_us
     
+    def is_playing(self) -> bool:
+        """Check if Spotify is currently playing."""
+        if not self._available:
+            return False
+        return run_async(is_spotify_playing_async())
+    
     def pause(self) -> bool:
-        """Pause Spotify playback."""
+        """Pause Spotify playback only if it's currently playing."""
         if not self._available:
             return False
             
         if not self._is_paused_by_us:
-            logger.info("Pausing Spotify...")
-            if run_async(pause_spotify_async()):
-                self._is_paused_by_us = True
-                return True
+            # Check if Spotify is actually playing before pausing
+            self._was_playing_before = self.is_playing()
+            
+            if self._was_playing_before:
+                logger.info("Spotify is playing - pausing...")
+                if run_async(pause_spotify_async()):
+                    self._is_paused_by_us = True
+                    return True
+            else:
+                logger.info("Spotify was already paused - not pausing")
+                self._is_paused_by_us = False
         return False
     
     def play(self) -> bool:
-        """Resume Spotify playback (only if we paused it)."""
+        """Resume Spotify playback only if we paused it AND it was playing before."""
         if not self._available:
             return False
             
-        if self._is_paused_by_us:
-            logger.info("Resuming Spotify...")
+        if self._is_paused_by_us and self._was_playing_before:
+            logger.info("Resuming Spotify (was playing before)...")
             if run_async(play_spotify_async()):
                 self._is_paused_by_us = False
+                self._was_playing_before = False
                 return True
+        elif self._is_paused_by_us:
+            logger.info("Not resuming Spotify (was not playing before)")
+            self._is_paused_by_us = False
+            self._was_playing_before = False
         return False
     
     def toggle(self) -> bool:
