@@ -1,0 +1,16 @@
+{
+    "duck_level": 0.1,
+    "normal_level": 1.0,
+    "fade_duration": 0.8,
+    "fade_steps": 20,
+    "check_interval": 0.1,
+    "pause_when_ducked": true,
+    "restore_delay": 0.5,
+    "monitored_apps": [
+        "chrome.exe"
+    ],
+    "music_apps": [
+        "Spotify.exe",
+        "spotify.exe"
+    ]
+}

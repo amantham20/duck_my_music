@@ -1,0 +1,6 @@
+# Audio ducking dependencies
+pycaw>=20230407            # Windows audio control
+comtypes>=1.2.0            # COM support for pycaw
+pystray>=0.19.4            # System tray icon
+Pillow>=10.0.0             # Image support for tray icon
+psutil>=5.9.0              # Process management
