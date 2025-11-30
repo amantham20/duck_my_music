@@ -105,14 +105,19 @@ def set_startup_enabled(enabled):
             # Get the path to the pyw file for silent startup
             script_dir = os.path.dirname(os.path.abspath(__file__))
             pyw_path = os.path.join(script_dir, "duck_my_music_gui.pyw")
-            python_path = sys.executable
             
-            # Use pythonw.exe for no console window
-            pythonw_path = python_path.replace("python.exe", "pythonw.exe")
-            if os.path.exists(pythonw_path):
-                startup_cmd = f'"{pythonw_path}" "{pyw_path}" --minimized'
+            # Try to use venv pythonw.exe first
+            venv_pythonw = os.path.join(script_dir, "venv", "Scripts", "pythonw.exe")
+            if os.path.exists(venv_pythonw):
+                startup_cmd = f'"{venv_pythonw}" "{pyw_path}" --minimized'
             else:
-                startup_cmd = f'"{python_path}" "{pyw_path}" --minimized'
+                # Fallback to system Python
+                python_path = sys.executable
+                pythonw_path = python_path.replace("python.exe", "pythonw.exe")
+                if os.path.exists(pythonw_path):
+                    startup_cmd = f'"{pythonw_path}" "{pyw_path}" --minimized'
+                else:
+                    startup_cmd = f'"{python_path}" "{pyw_path}" --minimized'
             
             winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, startup_cmd)
             logger.info(f"Added to startup: {startup_cmd}")
@@ -172,9 +177,12 @@ class DuckMyMusicGUI:
         # Load current startup state
         self.startup_var.set(is_startup_enabled())
         
-        # Start minimized if requested
+        # Start minimized if requested (auto-start monitoring and minimize to tray)
         if self.start_minimized:
             self.root.after(100, self._start_and_minimize)
+        else:
+            # Auto-start monitoring even when not minimized
+            self.root.after(100, self.start_monitoring)
     
     def _create_widgets(self):
         """Create all GUI widgets."""
