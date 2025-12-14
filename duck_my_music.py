@@ -93,6 +93,8 @@ class DuckMyMusic:
         self.spotify_controller = SpotifyController()
         
         logger.info("Initializing volume fader...")
+        # Only need fader for music apps (Spotify)
+        # Chrome stays at full volume always
         self.fader = VolumeFader(
             controller=self.volume_controller,
             music_apps=config['music_apps'],
@@ -130,40 +132,40 @@ class DuckMyMusic:
         self.stop()
     
     def _monitor_loop(self):
-        """Main monitoring loop that checks for audio and controls ducking."""
-        logger.info("Monitor loop started")
+        """Main monitoring loop - Chrome has priority over Spotify."""
+        logger.info("Monitor loop started - Chrome priority mode")
         check_interval = self.config['check_interval']
         monitored_apps = self.config['monitored_apps']
         restore_delay = self.config.get('restore_delay', 0.5)
         
-        silence_start_time = None  # Track when Chrome went silent
+        silence_start_time = None  # Track when Chrome stopped playing
         
         while not self._shutdown_event.is_set():
             try:
                 if self.enabled:
-                    # Check if any monitored app is playing audio
-                    other_audio_playing = self.audio_monitor.is_app_playing_audio(monitored_apps)
+                    # Check if Chrome is in playing state (actively playing media)
+                    chrome_is_playing = self.audio_monitor.is_in_playstate(monitored_apps)
                     
-                    if other_audio_playing and not self.fader.is_ducked:
-                        # Chrome started playing - duck immediately
-                        logger.info("Chrome audio detected - ducking Spotify")
+                    if chrome_is_playing and not self.fader.is_ducked:
+                        # Chrome is playing → pause Spotify
+                        logger.info("Chrome is playing - pausing Spotify")
                         self.fader.duck()
                         self._was_ducked = True
                         silence_start_time = None
                         
-                    elif other_audio_playing and self.fader.is_ducked:
-                        # Chrome still playing - reset silence timer
+                    elif chrome_is_playing and self.fader.is_ducked:
+                        # Chrome still playing - keep Spotify paused, reset timer
                         silence_start_time = None
                         
-                    elif not other_audio_playing and self.fader.is_ducked:
-                        # Chrome went silent
+                    elif not chrome_is_playing and self.fader.is_ducked:
+                        # Chrome not playing (paused or stopped)
                         if silence_start_time is None:
                             # Start tracking silence
                             silence_start_time = time.time()
-                            logger.debug("Chrome went silent, waiting...")
+                            logger.debug("Chrome not playing, waiting before resuming Spotify...")
                         elif time.time() - silence_start_time >= restore_delay:
-                            # Chrome has been silent long enough - restore
-                            logger.info("Chrome paused/stopped - restoring Spotify")
+                            # Chrome has been not playing long enough - resume Spotify
+                            logger.info("Chrome not playing - resuming Spotify")
                             self.fader.restore()
                             self._was_ducked = False
                             silence_start_time = None

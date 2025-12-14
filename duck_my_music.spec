@@ -9,24 +9,28 @@ from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
 
-# Collect all pycaw and comtypes data
+# Collect all pycaw, comtypes, and PIL data
 pycaw_datas, pycaw_binaries, pycaw_hiddenimports = collect_all('pycaw')
 comtypes_datas, comtypes_binaries, comtypes_hiddenimports = collect_all('comtypes')
+pil_datas, pil_binaries, pil_hiddenimports = collect_all('PIL')
 
 a = Analysis(
     ['duck_my_music_gui.py'],
     pathex=[],
-    binaries=pycaw_binaries + comtypes_binaries,
+    binaries=pycaw_binaries + comtypes_binaries + pil_binaries,
     datas=[
         ('config.json', '.'),
-    ] + pycaw_datas + comtypes_datas,
+    ] + pycaw_datas + comtypes_datas + pil_datas,
     hiddenimports=[
         'pystray._win32',
+        'PIL',
+        'PIL.Image',
+        'PIL.ImageDraw',
         'PIL._tkinter_finder',
         'comtypes.stream',
         'pycaw.pycaw',
         'pycaw.utils',
-    ] + pycaw_hiddenimports + comtypes_hiddenimports,
+    ] + pycaw_hiddenimports + comtypes_hiddenimports + pil_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

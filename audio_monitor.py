@@ -1,6 +1,7 @@
 """
 Audio Monitor Module
 Monitors audio sessions on Windows to detect when applications are producing sound.
+Also integrates with media state monitoring to distinguish between paused and stopped media.
 """
 
 import sys
@@ -23,6 +24,23 @@ class AudioMonitor(ABC):
     def is_app_playing_audio(self, app_names: List[str]) -> bool:
         """Check if any of the specified apps are currently playing audio."""
         pass
+    
+    @abstractmethod
+    def has_active_or_paused_media(self, app_names: List[str]) -> bool:
+        """
+        Check if any of the specified apps have active or paused media.
+        This includes apps with media sessions that are paused.
+        Returns False only if media is completely stopped/closed.
+        """
+        pass
+
+    @abstractmethod
+    def is_in_playstate(self, app_names: List[str]) -> bool:
+        """
+        Check if any of the specified apps are currently in playing state.
+        Returns True if any app is actively playing audio.
+        """
+        pass
 
 
 class WindowsAudioMonitor(AudioMonitor):
@@ -42,6 +60,15 @@ class WindowsAudioMonitor(AudioMonitor):
         except ImportError as e:
             logger.error(f"Failed to import pycaw: {e}")
             self._available = False
+        
+        # Initialize media state monitor
+        try:
+            from media_state_monitor import MediaStateMonitor
+            self._media_monitor = MediaStateMonitor()
+            logger.info("Media state monitor integrated")
+        except Exception as e:
+            logger.warning(f"Could not initialize media state monitor: {e}")
+            self._media_monitor = None
     
     def get_active_audio_apps(self) -> Set[str]:
         """Get all apps currently producing audio (not muted and volume > 0)."""
@@ -97,7 +124,52 @@ class WindowsAudioMonitor(AudioMonitor):
                 return True
         
         return False
+    
+    def has_active_or_paused_media(self, app_names: List[str]) -> bool:
+        """
+        Check if any apps have active or paused media.
+        Uses Windows Media Transport Controls to detect paused media sessions.
+        Returns True if:
+        - App is playing audio (detected via audio peak)
+        - App has a paused media session (detected via media controls)
+        Returns False only if:
+        - No audio playing AND no media session exists (media truly stopped/closed)
+        """
+        if not self._available:
+            return False
+        
+        # First check if audio is actively playing
+        if self.is_app_playing_audio(app_names):
+            logger.debug("Media is actively playing (audio detected)")
+            return True
+        
+        # No audio playing - check if there's a paused media session
+        if self._media_monitor:
+            has_session = self._media_monitor.has_active_media_session(app_names)
+            if has_session:
+                logger.debug("Media session exists (likely paused)")
+                return True
+        
+        # No audio and no media session - media is truly stopped
+        logger.debug("No active or paused media found")
+        return False
 
+    def is_in_playstate(self, app_names: List[str]) -> bool:
+        """Check if any of the specified apps are currently in playing state."""
+        if not self._available:
+            return False
+        
+        
+        # check if the media is in playing state not just producing audio
+        if self._media_monitor:
+            is_playing = self._media_monitor.is_media_playing(app_names)
+            if is_playing:
+                logger.debug("Media is in playing state")
+                return True
+            
+
+        
+        return False
 
 class MacAudioMonitor(AudioMonitor):
     """macOS implementation for audio monitoring."""
@@ -116,6 +188,10 @@ class MacAudioMonitor(AudioMonitor):
     
     def is_app_playing_audio(self, app_names: List[str]) -> bool:
         """Check if any of the specified apps are playing audio on macOS."""
+        return False
+    
+    def has_active_or_paused_media(self, app_names: List[str]) -> bool:
+        """Check if any apps have active or paused media on macOS."""
         return False
 
 

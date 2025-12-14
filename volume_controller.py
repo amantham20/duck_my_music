@@ -197,18 +197,27 @@ class VolumeFader:
     def _fade_to_volume(self, target: float, pause_after: bool = False, play_before: bool = False):
         """Smoothly fade to the target volume."""
         music_app = self._get_active_music_app()
-        if not music_app:
-            logger.debug("No music app found for fading")
-            return
         
-        # Resume playback before fading up
+        # Resume playback before fading up (even if no audio session)
         if play_before and self.spotify_controller:
             self.spotify_controller.play()
             time.sleep(0.1)  # Small delay to let playback start
+            # Re-check for music app after resuming
+            music_app = self._get_active_music_app()
+        
+        if not music_app:
+            logger.debug("No music app found for fading")
+            # Still pause if needed, even without audio session
+            if pause_after and self.spotify_controller:
+                self.spotify_controller.pause()
+            return
         
         current_volume = self.controller.get_app_volume(music_app)
         if current_volume is None:
             logger.debug(f"Could not get current volume for {music_app}")
+            # Still pause if needed
+            if pause_after and self.spotify_controller:
+                self.spotify_controller.pause()
             return
         
         step_delay = self.fade_duration / self.fade_steps
@@ -243,9 +252,13 @@ class VolumeFader:
             self._is_ducked = True
             self._current_target = self.duck_level
             
+            # Pause immediately if enabled (don't wait for fade)
+            if self.pause_when_ducked and self.spotify_controller:
+                self.spotify_controller.pause()
+            
             self._fade_thread = threading.Thread(
                 target=self._fade_to_volume,
-                args=(self.duck_level, self.pause_when_ducked, False),
+                args=(self.duck_level, False, False),  # Don't pause in fade, already done
                 daemon=True
             )
             self._fade_thread.start()
@@ -260,12 +273,14 @@ class VolumeFader:
             self._is_ducked = False
             self._current_target = self.normal_level
             
-            # Pass play_before=True to resume before fading up
+            # Resume immediately if we paused it (don't wait for fade)
             should_play = self.pause_when_ducked and self.spotify_controller and self.spotify_controller.is_paused_by_us
+            if should_play:
+                self.spotify_controller.play()
             
             self._fade_thread = threading.Thread(
                 target=self._fade_to_volume,
-                args=(self.normal_level, False, should_play),
+                args=(self.normal_level, False, False),  # Don't play in fade, already done
                 daemon=True
             )
             self._fade_thread.start()

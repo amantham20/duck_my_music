@@ -17,6 +17,7 @@ from audio_monitor import create_audio_monitor
 from volume_controller import create_volume_controller, VolumeFader
 from spotify_controller import SpotifyController
 from system_tray import SystemTray
+from media_state_monitor import MediaStateMonitor
 
 # Configure logging
 logging.basicConfig(
@@ -146,6 +147,7 @@ class DuckMyMusicGUI:
         
         # Initialize components (will be created when started)
         self.audio_monitor = None
+        self.media_state_monitor = None
         self.volume_controller = None
         self.spotify_controller = None
         self.fader = None
@@ -156,7 +158,7 @@ class DuckMyMusicGUI:
         # Create GUI
         self.root = tk.Tk()
         self.root.title(APP_NAME)
-        self.root.geometry("450x550")
+        self.root.geometry("500x750")
         self.root.resizable(False, False)
         
         # Set icon (if available)
@@ -275,6 +277,27 @@ class DuckMyMusicGUI:
         self.apps_entry.pack(fill=tk.X)
         ttk.Label(apps_frame, text="(comma-separated, e.g., chrome.exe, discord.exe)", font=("Segoe UI", 8)).pack(anchor=tk.W)
         
+        # Media Status frame
+        media_frame = ttk.LabelFrame(main_frame, text="Active Media Sessions", padding="10")
+        media_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        # Scrollable text widget for media status
+        media_scroll_frame = ttk.Frame(media_frame)
+        media_scroll_frame.pack(fill=tk.BOTH, expand=True)
+        
+        self.media_text = tk.Text(media_scroll_frame, height=10, wrap=tk.WORD, font=("Consolas", 9))
+        self.media_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        media_scrollbar = ttk.Scrollbar(media_scroll_frame, command=self.media_text.yview)
+        media_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.media_text.config(yscrollcommand=media_scrollbar.set)
+        
+        # Make text widget read-only
+        self.media_text.config(state=tk.DISABLED)
+        
+        # Update button
+        ttk.Button(media_frame, text="🔄 Refresh", command=self.update_media_status).pack()
+        
         # Save button
         save_frame = ttk.Frame(main_frame)
         save_frame.pack(fill=tk.X)
@@ -295,6 +318,7 @@ class DuckMyMusicGUI:
         try:
             # Initialize components
             self.audio_monitor = create_audio_monitor()
+            self.media_state_monitor = MediaStateMonitor()
             self.volume_controller = create_volume_controller()
             self.spotify_controller = SpotifyController()
             
@@ -351,7 +375,7 @@ class DuckMyMusicGUI:
         logger.info("Monitoring stopped")
     
     def _monitor_loop(self):
-        """Main monitoring loop."""
+        """Main monitoring loop - Chrome has priority, pauses Spotify when playing."""
         import time
         
         check_interval = self.config.get('check_interval', 0.1)
@@ -361,21 +385,33 @@ class DuckMyMusicGUI:
         while not self.shutdown_event.is_set():
             try:
                 if self.enabled:
-                    other_audio_playing = self.audio_monitor.is_app_playing_audio(monitored_apps)
+                    # Check if Chrome is ACTIVELY playing (not just paused media session)
+                    chrome_is_playing = self.audio_monitor.is_in_playstate(monitored_apps)
                     
-                    if other_audio_playing and not self.fader.is_ducked:
-                        self.root.after(0, lambda: self.status_var.set("🔊 Chrome playing - Spotify ducked"))
+                    # Update media status display every few iterations
+                    if not hasattr(self, '_update_counter'):
+                        self._update_counter = 0
+                    self._update_counter += 1
+                    if self._update_counter >= 10:  # Update every ~1 second
+                        self.root.after(0, self.update_media_status)
+                        self._update_counter = 0
+                    
+                    if chrome_is_playing and not self.fader.is_ducked:
+                        # Chrome is actively playing → pause Spotify
+                        self.root.after(0, lambda: self.status_var.set("🔊 Chrome playing - Spotify paused"))
                         self.fader.duck()
                         self.silence_start_time = None
                         
-                    elif other_audio_playing and self.fader.is_ducked:
+                    elif chrome_is_playing and self.fader.is_ducked:
+                        # Chrome still playing - keep Spotify paused
                         self.silence_start_time = None
                         
-                    elif not other_audio_playing and self.fader.is_ducked:
+                    elif not chrome_is_playing and self.fader.is_ducked:
+                        # Chrome paused or stopped → resume Spotify after delay
                         if self.silence_start_time is None:
                             self.silence_start_time = time.time()
                         elif time.time() - self.silence_start_time >= restore_delay:
-                            self.root.after(0, lambda: self.status_var.set("✅ Running - Monitoring for audio..."))
+                            self.root.after(0, lambda: self.status_var.set("✅ Chrome paused - Spotify playing"))
                             self.fader.restore()
                             self.silence_start_time = None
                 
@@ -406,6 +442,58 @@ class DuckMyMusicGUI:
         self.restore_delay_var.set(0.5)
         self.pause_var.set(True)
         self.apps_var.set("chrome.exe")
+    
+    def update_media_status(self):
+        """Update the media status display."""
+        if not self.media_state_monitor or not self.media_state_monitor._available:
+            self.media_text.config(state=tk.NORMAL)
+            self.media_text.delete(1.0, tk.END)
+            self.media_text.insert(tk.END, "Media state monitor not available.\n")
+            self.media_text.insert(tk.END, "Install winsdk: pip install winsdk")
+            self.media_text.config(state=tk.DISABLED)
+            return
+        
+        try:
+            media_states = self.media_state_monitor.get_all_media_states()
+            
+            self.media_text.config(state=tk.NORMAL)
+            self.media_text.delete(1.0, tk.END)
+            
+            if not media_states:
+                self.media_text.insert(tk.END, "No active media sessions detected.\n")
+                self.media_text.insert(tk.END, "\nPlay or pause a video/audio in your browser\n")
+                self.media_text.insert(tk.END, "to see it appear here.")
+            else:
+                self.media_text.insert(tk.END, f"Found {len(media_states)} media session(s):\n\n")
+                
+                for app_name, state in media_states.items():
+                    # Status indicator
+                    if state.is_playing:
+                        status = "▶ PLAYING"
+                        status_color = "green"
+                    elif state.is_paused:
+                        status = "⏸ PAUSED"
+                        status_color = "orange"
+                    else:
+                        status = "⏹ STOPPED"
+                        status_color = "gray"
+                    
+                    # Insert with formatting
+                    self.media_text.insert(tk.END, f"• {app_name}\n")
+                    self.media_text.insert(tk.END, f"  Status: {status}\n")
+                    if state.title:
+                        title_display = state.title[:50] + "..." if len(state.title) > 50 else state.title
+                        self.media_text.insert(tk.END, f"  Title: {title_display}\n")
+                    self.media_text.insert(tk.END, "\n")
+            
+            self.media_text.config(state=tk.DISABLED)
+            
+        except Exception as e:
+            logger.error(f"Error updating media status: {e}")
+            self.media_text.config(state=tk.NORMAL)
+            self.media_text.delete(1.0, tk.END)
+            self.media_text.insert(tk.END, f"Error: {e}")
+            self.media_text.config(state=tk.DISABLED)
     
     def toggle_startup(self):
         """Toggle Windows startup setting."""
