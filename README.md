@@ -1,6 +1,6 @@
 # Duck My Music 🎵🔊
 
-A Windows/macOS application that runs in the background and automatically "ducks" (lowers) your Spotify volume when other applications play audio (like Chrome, Discord, Zoom, etc.), then smoothly restores it when the audio stops.
+A Windows application that runs in the background and automatically "ducks" (lowers) your Spotify volume when other applications play audio (like Chrome, Discord, Zoom, etc.), then smoothly restores it when the audio stops.
 
 ## Features
 
